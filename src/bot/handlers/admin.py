@@ -26,18 +26,31 @@ priority_kb = types.ReplyKeyboardMarkup(keyboard=[
 ], resize_keyboard=True)
 
 # =====================================================================
-# 0. GLOBAL BEKOR QILISH (ENG YUQORIDA BO'LISHI SHART)
+# YORDAMCHI FUNKSIYA (BAZADA BORLIGINI TEKSHIRISH)
+# =====================================================================
+async def get_db_status(telegram_id: int) -> bool:
+    """
+    Foydalanuvchi users jadvalida bormi?
+    True -> Tugma chiqadi
+    False -> Tugma chiqmaydi
+    """
+    async with async_session() as session:
+        res = await session.execute(select(User).where(User.telegram_id == telegram_id))
+        return res.scalar_one_or_none() is not None
+
+# =====================================================================
+# 0. GLOBAL BEKOR QILISH
 # =====================================================================
 
 @router.message(F.text == "🚫 Bekor qilish", StateFilter('*'))
 async def cancel_global(message: types.Message, state: FSMContext):
-    current_state = await state.get_state()
-    if current_state is None:
-        return await message.answer("Bekor qilindi.", reply_markup=get_main_menu("super_admin" if message.from_user.id in settings.ADMIN_IDS else "admin", mode="admin"))
-
     await state.clear()
+    
+    # Dinamik tekshiruv
+    user_in_db = await get_db_status(message.from_user.id)
     role = "super_admin" if message.from_user.id in settings.ADMIN_IDS else "admin"
-    await message.answer("Jarayon bekor qilindi.", reply_markup=get_main_menu(role, mode="admin"))
+    
+    await message.answer("Jarayon bekor qilindi.", reply_markup=get_main_menu(role, mode="admin", user_in_db=user_in_db))
 
 # =====================================================================
 # 1. ADMIN VA XODIM BOSHQARUVI
@@ -73,8 +86,12 @@ async def process_admin_name(message: types.Message, state: FSMContext):
             session.add(new_admin)
             msg = f"✅ Yangi Admin qo'shildi: <b>{message.text}</b>"
         await session.commit()
+    
     await state.clear()
-    await message.answer(msg, reply_markup=get_main_menu("super_admin", mode="admin"), parse_mode="HTML")
+    
+    # Dinamik tekshiruv
+    user_in_db = await get_db_status(message.from_user.id)
+    await message.answer(msg, reply_markup=get_main_menu("super_admin", mode="admin", user_in_db=user_in_db), parse_mode="HTML")
 
 @router.message(F.text == "➕ Xodim qo'shish")
 async def cmd_add_employee(message: types.Message, state: FSMContext):
@@ -104,9 +121,14 @@ async def process_emp_name(message: types.Message, state: FSMContext):
             session.add(new_user)
             msg = f"✅ Xodim qo'shildi: <b>{message.text}</b>"
         await session.commit()
+    
     await state.clear()
+    
+    # Dinamik tekshiruv (Eng muhim joyi: agar o'zini qo'shgan bo'lsa, tugma chiqadi)
+    user_in_db = await get_db_status(message.from_user.id)
     role = "super_admin" if message.from_user.id in settings.ADMIN_IDS else "admin"
-    await message.answer(msg, reply_markup=get_main_menu(role, mode="admin"), parse_mode="HTML")
+    
+    await message.answer(msg, reply_markup=get_main_menu(role, mode="admin", user_in_db=user_in_db), parse_mode="HTML")
 
 # =====================================================================
 # 2. VAZIFA YUKLASH
@@ -116,11 +138,12 @@ async def process_emp_name(message: types.Message, state: FSMContext):
 async def cmd_add_task(message: types.Message, state: FSMContext):
     await state.clear()
     async with async_session() as session:
-        # Super Adminlarni ro'yxatda ko'rsatmaymiz
+        # Bu ro'yxatda kim chiqishi. Tugmaga aloqasi yo'q.
+        # Super Adminlar agar ro'yxatda chiqmasligi kerak bo'lsa:
         res = await session.execute(
             select(User).where(
                 User.role.in_([UserRole.employee, UserRole.admin, UserRole.super_employee]),
-                ~User.telegram_id.in_(settings.ADMIN_IDS)
+                ~User.telegram_id.in_(settings.ADMIN_IDS) # <-- Super Adminlar ro'yxatda yashirin
             )
         )
         users = res.scalars().all()
@@ -168,8 +191,10 @@ async def process_task_final(message: types.Message, state: FSMContext, bot: Bot
             kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="📥 Vazifani qabul qildim", callback_data=f"accept_task_{new_task.id}")]])
             await bot.send_message(emp.telegram_id, f"📩 <b>Yangi vazifa yuklatildi!</b>\n\n📌 <b>Vazifa:</b> {data['task_name']}\n📅 <b>Muddat:</b> {data['deadline']}\n📊 <b>Daraja:</b> {priority}", reply_markup=kb, parse_mode="HTML")
             
+            # Dinamik tekshiruv
+            user_in_db = await get_db_status(message.from_user.id)
             role = "super_admin" if message.from_user.id in settings.ADMIN_IDS else "admin"
-            await message.answer("✅ Vazifa yozildi va xodimga bildirildi!", reply_markup=get_main_menu(role, mode="admin"))
+            await message.answer("✅ Vazifa yozildi va xodimga bildirildi!", reply_markup=get_main_menu(role, mode="admin", user_in_db=user_in_db))
         except Exception as e:
             await message.answer(f"❌ Xatolik: {e}")
         finally:
@@ -258,7 +283,10 @@ async def process_super_feedback(message: types.Message, state: FSMContext):
         user = await session.get(User, task.user_id)
         await sheets_service.update_direktor_feedback(user.personal_sheet_id, user.worksheet_name, task.row_index, message.text)
     await state.clear()
-    await message.answer("✅ Direktor izohi AL38 ustuniga yozildi!", reply_markup=get_main_menu("super_admin", mode="admin"))
+    
+    # Dinamik tekshiruv
+    user_in_db = await get_db_status(message.from_user.id)
+    await message.answer("✅ Direktor izohi AL38 ustuniga yozildi!", reply_markup=get_main_menu("super_admin", mode="admin", user_in_db=user_in_db))
 
 @router.callback_query(F.data == "super_fb_skip")
 async def super_fb_skip(callback: types.CallbackQuery):
@@ -269,7 +297,7 @@ async def super_fb_skip(callback: types.CallbackQuery):
 async def cmd_list(message: types.Message, state: FSMContext):
     await state.clear()
     async with async_session() as session:
-        # Super adminlarni ro'yxatdan chiqarib tashlaymiz
+        # SUPER ADMINLAR RO'YXATDA YASHIRILDI
         res = await session.execute(
             select(User).where(
                 User.role.in_([UserRole.employee, UserRole.admin, UserRole.super_employee]),
@@ -295,7 +323,7 @@ async def cmd_report(message: types.Message, state: FSMContext):
 async def cmd_link_sheet(message: types.Message, state: FSMContext):
     await state.clear()
     async with async_session() as session:
-        # Bu yerda ham Super Adminni chiqarmaymiz
+        # SUPER ADMINLAR YASHIRILDI
         res = await session.execute(
             select(User).where(
                 User.role.in_([UserRole.employee, UserRole.admin, UserRole.super_employee]),
@@ -320,8 +348,11 @@ async def process_tab_name(message: types.Message, state: FSMContext):
         await session.execute(update(User).where(User.full_name == data['target_name']).values(worksheet_name=message.text))
         await session.commit()
     await state.clear()
+    
+    # Dinamik tekshiruv
+    user_in_db = await get_db_status(message.from_user.id)
     role = "super_admin" if message.from_user.id in settings.ADMIN_IDS else "admin"
-    await message.answer(f"✅ Tab bog'landi: {message.text}", reply_markup=get_main_menu(role, mode="admin"))
+    await message.answer(f"✅ Tab bog'landi: {message.text}", reply_markup=get_main_menu(role, mode="admin", user_in_db=user_in_db))
 
 async def notify_admins_for_feedback(task, user, bot: Bot):
     async with async_session() as session:
