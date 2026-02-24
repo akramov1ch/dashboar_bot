@@ -1,56 +1,48 @@
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 
-def get_main_menu(role: str, mode: str = "admin", user_in_db: bool = False) -> ReplyKeyboardMarkup | ReplyKeyboardRemove:
-    """
-    Menyuni dinamik yaratish.
-    
-    :param role: Foydalanuvchi roli (super_admin, admin, va h.k.)
-    :param mode: Qaysi rejimda ekanligi (admin yoki employee)
-    :param user_in_db: Bazada bormi? (Hal qiluvchi faktor)
-    """
-    
-    # Agar roli yo'q bo'lsa (ro'yxatdan o'tmagan va super admin ham emas)
-    if not role:
-        return ReplyKeyboardRemove()
-
+def get_main_menu(role: str, user_in_db: bool = False) -> ReplyKeyboardMarkup:
     buttons = []
     
-    # ==============================
-    # 1. ADMIN REJIMI
-    # ==============================
-    if mode == "admin":
-        # Hamma adminlar uchun standart tugmalar
-        row1 = [KeyboardButton(text="➕ Yangi vazifa"), KeyboardButton(text="➕ Xodim qo'shish")]
-        row2 = [KeyboardButton(text="👥 Xodimlar"), KeyboardButton(text="📊 Oylik hisobot")]
-        
-        buttons.append(row1)
-
-        # Faqat Super Admin uchun qo'shimcha tugmalar
-        if role == "super_admin":
-            extra_row = [KeyboardButton(text="➕ Admin qo'shish"), KeyboardButton(text="📅 Yangi oy ochish")]
-            buttons.append(extra_row)
-        
-        buttons.append(row2)
-
-        # --- DINAMIK TEKSHIRUV ---
-        # Agar foydalanuvchi (Super Admin yoki Oddiy Admin) bazada jismonan mavjud bo'lsa,
-        # unga "Xodim rejimiga o'tish" tugmasini chiqaramiz.
-        if user_in_db:
-            buttons.append([KeyboardButton(text="👤 Xodim rejimiga o'tish")])
-
-    # ==============================
-    # 2. XODIM REJIMI
-    # ==============================
-    else:
+    # Admin va Content Maker vazifa boshqaruvchilari
+    if role == "admin":
+        buttons = [
+            [KeyboardButton(text="➕ Xodim qo'shish"), KeyboardButton(text="👥 Xodimlar")],
+            [KeyboardButton(text="📊 Oylik hisobot"), KeyboardButton(text="📅 Yangi oy ochish")]
+        ]
+    elif role == "content_maker":
+        buttons = [
+            [KeyboardButton(text="➕ Yangi vazifa")],
+            [KeyboardButton(text="📊 Oylik hisobot")]
+        ]
+    
+    # Ijrochilar
+    elif role == "mobilographer":
         buttons = [
             [KeyboardButton(text="📝 Mening vazifalarim")],
-            [KeyboardButton(text="✅ Statusni yangilash")],
-            [KeyboardButton(text="🔗 Mening Dashboardim")]
+            [KeyboardButton(text="📤 Tekshirishga yuborish"), KeyboardButton(text="✅ Bajarildi")]
         ]
-        
-        # Agar adminlik huquqi bo'lsa, orqaga qaytish tugmasi doim chiqadi
-        if role in ["super_admin", "admin", "super_employee"]: 
-            buttons.append([KeyboardButton(text="⚙️ Admin rejimiga o'tish")])
+    
+    elif role == "copywriter":
+        buttons = [
+            [KeyboardButton(text="📝 Mening vazifalarim")],
+            [KeyboardButton(text="✍️ Matnni topshirish")]
+        ]
+    
+    elif role == "designer":
+        buttons = [
+            [KeyboardButton(text="📝 Mening vazifalarim")],
+            [KeyboardButton(text="🎨 Coverni topshirish")]
+        ]
+    
+    elif role == "marketer":
+        buttons = [
+            [KeyboardButton(text="📝 Mening vazifalarim")],
+            [KeyboardButton(text="🚀 Postni nashr etish")]
+        ]
+
+    # Agar foydalanuvchi bazada bo'lsa va admin bo'lmasa, rejimlar orasida o'tish tugmasi (ixtiyoriy)
+    if user_in_db and role in ["admin", "content_maker"]:
+        buttons.append([KeyboardButton(text="👤 Ijrochi rejimiga o'tish")])
 
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 

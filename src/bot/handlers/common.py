@@ -17,58 +17,44 @@ async def cmd_start(message: types.Message):
         result = await session.execute(select(User).where(User.telegram_id == user_id))
         user = result.scalar_one_or_none()
         
-        # 1. User jismonan bazada bormi? (Hal qiluvchi)
         user_in_db = user is not None
 
-        # 2. Rolini aniqlash
+        # 1. Super Admin tekshiruvi (settings.py dagi IDlar)
         if user_id in settings.ADMIN_IDS:
-            role_key = "super_admin"
+            role_key = "admin"
             welcome_text = f"🛡 **Super Admin paneliga xush kelibsiz!**"
+        # 2. Bazadagi ro'yxatdan o'tgan xodimlar
         elif user:
             role_key = user.role.value
             welcome_text = f"🚀 **Siz tizimga {role_key} sifatida kirdingiz.**"
+        # 3. Ro'yxatdan o'tmaganlar
         else:
             role_key = None
-            welcome_text = "❌ <b>Siz ro'yxatdan o'tmagansiz.</b>\nIltimos, administratorga ID raqamingizni yuboring: \n\n🆔 ID: <code>{}</code>".format(user_id)
+            welcome_text = (
+                "❌ <b>Siz ro'yxatdan o'tmagansiz.</b>\n"
+                "Iltimos, administratorga ID raqamingizni yuboring: \n\n"
+                "🆔 ID: <code>{}</code>".format(user_id)
+            )
 
-    # Rejim
-    if role_key in ["super_admin", "admin", "super_employee"]:
-        mode = "admin"
-    else:
-        mode = "employee"
+    # get_main_menu funksiyasidan 'mode' argumenti olib tashlandi ✅
+    await message.answer(
+        welcome_text, 
+        reply_markup=get_main_menu(role_key, user_in_db=user_in_db), 
+        parse_mode="HTML"
+    )
 
-    # Dinamik menyu
-    await message.answer(welcome_text, reply_markup=get_main_menu(role_key, mode=mode, user_in_db=user_in_db), parse_mode="HTML")
-
-@router.message(F.text == "👤 Xodim rejimiga o'tish")
+@router.message(F.text == "👤 Ijrochi rejimiga o'tish")
 async def switch_to_employee(message: types.Message):
     user_id = message.from_user.id
     async with async_session() as session:
         res = await session.execute(select(User).where(User.telegram_id == user_id))
         user = res.scalar_one_or_none()
-        user_in_db = user is not None
         
-        # Agar user bazada bo'lmasa, demak xodim ham emas
-        if not user_in_db:
-             # Super admin bo'lsa, menyusi qaytib kelsin, lekin xodim rejimi yo'q
-            role = "super_admin" if user_id in settings.ADMIN_IDS else None
-            return await message.answer("❌ Siz xodimlar ro'yxatida yo'qsiz.", reply_markup=get_main_menu(role, mode="admin", user_in_db=False))
+        if not user:
+            return await message.answer("❌ Siz xodimlar ro'yxatida yo'qsiz.")
 
-        role = "super_admin" if user_id in settings.ADMIN_IDS else user.role.value
-        await message.answer("🔄 **Xodim rejimiga o'tdingiz.**", reply_markup=get_main_menu(role, mode="employee", user_in_db=user_in_db), parse_mode="Markdown")
-
-@router.message(F.text == "⚙️ Admin rejimiga o'tish")
-async def switch_to_admin(message: types.Message):
-    user_id = message.from_user.id
-    async with async_session() as session:
-        res = await session.execute(select(User).where(User.telegram_id == user_id))
-        user = res.scalar_one_or_none()
-        user_in_db = user is not None
-
-        is_admin = user_id in settings.ADMIN_IDS or (user and user.role in [UserRole.admin, UserRole.super_employee])
-        
-        if is_admin:
-            role = "super_admin" if user_id in settings.ADMIN_IDS else user.role.value
-            await message.answer("🔄 **Admin rejimiga qaytdingiz.**", reply_markup=get_main_menu(role, mode="admin", user_in_db=user_in_db), parse_mode="Markdown")
-        else:
-            await message.answer("⛔️ Sizda adminlik huquqi yo'q.")
+        await message.answer(
+            "🔄 **Ijrochi rejimiga o'tdingiz.**", 
+            reply_markup=get_main_menu(user.role.value, user_in_db=True), 
+            parse_mode="Markdown"
+        )
